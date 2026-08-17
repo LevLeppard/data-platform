@@ -1,0 +1,5 @@
+version: 2
+
+models:
+  - name: fct_orders
+    description: "Справочник заказов клиентов со статусами и incremental по order_date"
