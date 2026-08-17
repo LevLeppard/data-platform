@@ -2,6 +2,7 @@ version: 2
 
 models:
   - name: stg_customers
+    description: "Клиенты магазина, очищенные от сырых полей raw_customers"
     columns:
       - name: customer_id
         tests:
