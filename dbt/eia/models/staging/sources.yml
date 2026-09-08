@@ -1,0 +1,8 @@
+version: 2
+
+sources:
+  - name: raw
+    schema: raw
+    tables:
+      - name: raw_petroleum_input_utilization
+      - name: raw_petroleum_import_export
