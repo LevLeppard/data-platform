@@ -1,7 +1,16 @@
+x-dbt-common: &dbt-common
+  volumes:
+    - ../dbt:/usr/local/airflow/dbt
+  environment:
+    - DBT_POSTGRES_PASSWORD=${AIRFLOW_VAR_DWH_POSTGRES_PASSWORD}
+    - AIRFLOW_CONN_DBT_POSTGRES_EIA=${AIRFLOW_CONN_DBT_POSTGRES_EIA}
+
 services:
   scheduler:
-    volumes:
-      - ../dbt:/usr/local/airflow/dbt
+    <<: *dbt-common
   dag-processor:
-    volumes:
-      - ../dbt:/usr/local/airflow/dbt
+    <<: *dbt-common
+  api-server:
+    <<: *dbt-common
+  triggerer:
+    <<: *dbt-common

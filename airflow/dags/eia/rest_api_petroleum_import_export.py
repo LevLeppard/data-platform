@@ -16,11 +16,11 @@ default_args = {
     "retry_delay": timedelta(minutes=5),
 }
 
-def rest_api_petroleum_input_utilization(**context):
+def rest_api_petroleum_import_export(**context):
     api_url = "https://api.eia.gov/v2"
     api_key = Variable.get("eia_api_key")
 
-    route = "petroleum/pnp/wiup/data/"
+    route = "petroleum/move/wimpc/data/"
     url = f"{api_url}/{route}"
 
     params = {
@@ -41,13 +41,13 @@ def rest_api_petroleum_input_utilization(**context):
     df["loaded_at"] = datetime.utcnow()
     hook = PostgresHook(postgres_conn_id="dbt-postgres-eia")
     engine = hook.get_sqlalchemy_engine()
-
+    
     with engine.connect() as conn:
         conn.execute(text("CREATE SCHEMA IF NOT EXISTS raw"))
         conn.commit()
-
+    
     df.to_sql(
-        "raw_petroleum_input_utilization",
+        "raw_petroleum_import_export",
         engine,
         schema="raw",
         if_exists="append",
@@ -66,28 +66,28 @@ execution_config = ExecutionConfig(
 
 
 with DAG(
-    dag_id="rest_api_petroleum_input_utilization",
+    dag_id="rest_api_petroleum_import_export",
     default_args=default_args,
     schedule="@weekly",
     start_date=datetime(2026, 9, 1),
     catchup=False,
-    tags=["eia", "petroleum", "input_utilization", "dbt"],
+    tags=["eia", "petroleum", "import_export", "dbt"],
 ) as dag:
 
     extract_load = PythonOperator(
-        task_id="extract_load_petroleum_input_utilization",
-        python_callable=rest_api_petroleum_input_utilization,
+        task_id="extract_load_petroleum_import_export",
+        python_callable=rest_api_petroleum_import_export,
     )
 
     dbt_transform = DbtTaskGroup(
-        group_id="dbt_transform_petroleum_input_utilization",
+        group_id="dbt_transform_petroleum_import_export",
         project_config=ProjectConfig(
             "/usr/local/airflow/dbt/eia",
         ),
         profile_config=profile_config,
         execution_config=execution_config,
         render_config=RenderConfig(
-            select=["stg_petroleum_input_utilization"],
+            select=["stg_petroleum_import_export"],
         ),
     )
 

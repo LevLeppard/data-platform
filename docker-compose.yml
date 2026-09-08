@@ -1,29 +1,25 @@
 version: "3.8"
 services:
-  postgres:
-    image: postgres:16
-    container_name: dbt-postgres-jaffle_shop
-    environment:
-      POSTGRES_USER: dbtuser
-      POSTGRES_PASSWORD: dbtpass
-      POSTGRES_DB: dbtdb
-    ports:
-      - "5432:5432"
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-
-  postgres2:
+  dbt_postgres_eia_service:
     image: postgres:16
     container_name: dbt-postgres-eia
     environment:
-      POSTGRES_USER: dbtuser2
-      POSTGRES_PASSWORD: dbtpass2
-      POSTGRES_DB: dbtdb2
+      POSTGRES_USER: ${DWH_POSTGRES_USER}
+      POSTGRES_PASSWORD: ${DWH_POSTGRES_PASSWORD}
+      POSTGRES_DB: ${DWH_POSTGRES_DB}
     ports:
       - "5433:5432"
     volumes:
       - pgdata2:/var/lib/postgresql/data
+    networks:
+      - default
+      - astro_network
 
 volumes:
   pgdata:
   pgdata2:
+
+networks:
+  astro_network:
+    external: true
+    name: ${ASTRO_NETWORK_NAME}

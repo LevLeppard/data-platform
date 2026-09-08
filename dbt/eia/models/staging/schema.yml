@@ -1,0 +1,16 @@
+version: 2
+
+models:
+  - name: stg_petroleum_input_utilization
+    columns:
+      - name: period_date
+        tests:
+          - not_null
+      - name: value
+        tests:
+          - not_null
+  - name: stg_petroleum_import_export
+    columns:
+      - name: period_date
+        tests:
+          - not_null
