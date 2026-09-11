@@ -6,3 +6,5 @@ dbt/logs/
 target/
 dbt_packages/
 **/profiles.yml
+backups/
+.env
