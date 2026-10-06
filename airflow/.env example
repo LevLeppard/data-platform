@@ -1,0 +1,3 @@
+AIRFLOW_VAR_DWH_POSTGRES_PASSWORD=dbtpass
+AIRFLOW_VAR_EIA_API_KEY=bQkd5FB1tBd40l2gkf90sFWSzehAQdR2RX9KiYFQ
+AIRFLOW_CONN_DBT_POSTGRES_EIA=postgresql://dbtuser:dbtpass@dbt-postgres-eia:5432/dbtdb
