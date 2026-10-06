@@ -1,4 +1,3 @@
-version: "3.8"
 services:
   dbt_postgres_eia_service:
     image: postgres:16

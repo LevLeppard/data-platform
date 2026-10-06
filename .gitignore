@@ -6,4 +6,5 @@ dbt/logs/
 target/
 dbt_packages/
 **/profiles.yml
-metabase/metabase-data/metabase.db/
+backups/
+.env
