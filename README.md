@@ -29,6 +29,12 @@ Postgres DWH (dbt-postgres-eia, Docker, port 5433)
 
 Schemas are set per layer in `dbt/eia/dbt_project.yml`, and the `generate_schema_name` macro makes dbt use them as-is (`staging`, `marts`) instead of prefixing the target schema.
 
+### Result
+
+The Metabase dashboard "U.S. fuels consumption from EIA data" is built on `marts.fct_petroleum_consumption_monthly`. The side panel shows Metabot explaining the dashboard.
+
+![U.S. fuels consumption dashboard in Metabase with Metabot explaining it](EIA_dashboard_2026-10-07.png)
+
 ### Airflow DAGs (`airflow/dags/eia/`)
 
 One DAG per EIA dataset, all scheduled `@weekly`:
@@ -133,6 +139,9 @@ Set `ANTHROPIC_API_KEY` in the root `.env`; `make up` passes it to Metabase with
 * dbt run orchestrated as native Airflow tasks through Cosmos
 * Automated Postgres backups on `make down`
 * Metabase on top of the warehouse with Metabot enabled via Anthropic
+
+
+
 * Jaffle Shop sandbox: seeds, snapshots (SCD2), custom macro, `dbt_utils`, Cosmos vs `BashOperator` comparison, `trigger_rule` notifications
 
 ## Author
