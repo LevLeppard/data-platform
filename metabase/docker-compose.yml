@@ -8,6 +8,7 @@ services:
       - ./metabase-data:/metabase-data
     environment:
       - MB_DB_FILE=/metabase-data/metabase.db
+      - MB_LLM_ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
     networks:
       - astro_network
     restart: unless-stopped

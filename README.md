@@ -1,133 +1,140 @@
-# Data Platform: dbt + Airflow
+# Data Platform: EIA petroleum data (Airflow + dbt + Metabase)
 
-A learning pet project implementing a full ELT pipeline: data transformation with dbt, orchestration and monitoring through Apache Airflow. Built on the classic Jaffle Shop dataset.
+A learning pet project implementing an ELT pipeline: weekly petroleum data is pulled from the [EIA Open Data API](https://www.eia.gov/opendata/) into Postgres, transformed with dbt, orchestrated by Apache Airflow and explored in Metabase (including the Metabot AI assistant). The original Jaffle Shop dbt project is kept as a learning sandbox.
 
 ## Architecture
 
 ```
-Postgres (dbt-postgres, Docker)
+EIA API v2
+   │  (Airflow PythonOperator: incremental extract + load)
+   ▼
+Postgres DWH (dbt-postgres-eia, Docker, port 5433)
 │
-├── raw_customers / raw_orders / raw_payments        seeds (learning stand-in for a source)
+├── raw/                                   loaded by Airflow
+│   ├── raw_petroleum_input_utilization
+│   ├── raw_petroleum_import_export
+│   └── raw_petroleum_consumption
 │
-├── staging/                                          1:1 with the raw data
-│   ├── stg_customers
-│   ├── stg_orders
-│   └── stg_payments        (+ cents_to_dollars macro)
+├── staging/                               dbt: typed, deduplicated (latest loaded_at wins)
+│   ├── stg_petroleum_input_utilization
+│   ├── stg_petroleum_import_export
+│   └── stg_petroleum_consumption
 │
-├── intermediate/
-│   └── int_customer_orders  (join stg_orders + stg_customers)
-│
-├── marts/                                            analytics data marts
-│   ├── dim_customers
-│   └── fct_orders           (incremental)
-│
-└── snapshots/
-    └── orders_snapshot      (SCD Type 2, order change history)
+└── marts/                                 dbt: analytics tables
+    └── fct_petroleum_consumption_monthly  (incremental, monthly aggregate by product)
+                │
+                ▼
+          Metabase (port 3000) + Metabot
 ```
 
-Orchestration in Airflow (`airflow/dags/production_pipeline.py`):
+Schemas are set per layer in `dbt/eia/dbt_project.yml`, and the `generate_schema_name` macro makes dbt use them as-is (`staging`, `marts`) instead of prefixing the target schema.
+
+### Airflow DAGs (`airflow/dags/eia/`)
+
+One DAG per EIA dataset, all scheduled `@weekly`:
+
+| DAG | Dataset |
+|---|---|
+| `rest_api_petroleum_input_utilization` | refinery input / utilization |
+| `rest_api_petroleum_import_export` | imports / exports |
+| `rest_api_petroleum_consumption` | product supplied (consumption) |
+
+Each DAG has the same shape:
 
 ```
-extract_data (BashOperator)
-      │
+extract_load (PythonOperator)        reads MAX(period) from raw, requests only newer data from the API,
+      │                              appends to raw.<table>
       ▼
-dbt_build (Cosmos DbtTaskGroup — 16 granular tasks: seed/run/test/snapshot)
-      │
-      ├──► notify_success   (trigger_rule=all_success)
-      └──► notify_failure   (trigger_rule=one_failed)
+dbt_transform (Cosmos DbtTaskGroup)  runs the staging model and everything downstream of it
 ```
+
+The EIA API key and the warehouse connection come from Airflow environment variables (`AIRFLOW_VAR_EIA_API_KEY`, `AIRFLOW_CONN_DBT_POSTGRES_EIA`), defined in `airflow/.env`.
 
 ## Stack
 
-* dbt-core 1.12 + `dbt-postgres`
-* Apache Airflow (Astro Runtime, Airflow 3.x)
-* astronomer-cosmos — integrates the dbt project as native Airflow tasks
-* Postgres — data warehouse and Airflow metadata (separate containers)
-* Docker / Astro CLI — local environment
+* Apache Airflow (Astro Runtime, Airflow 3.x) via the Astro CLI
+* `astronomer-cosmos` — renders the dbt project as native Airflow tasks
+* dbt-core + `dbt-postgres`
+* Postgres 16 — data warehouse (separate from Airflow's metadata DB)
+* Metabase (`metabase/metabase:latest`) with Metabot, using Anthropic as the AI provider
+* Docker Compose, Make
 
 ## Repository structure
 
 ```
 data-platform/
-├── dbt/
-│   └── jaffle_shop/           # dbt project
-│       ├── models/
-│       ├── seeds/
-│       ├── snapshots/
-│       └── profiles.yml       # NOT in git, created manually (see below)
 ├── airflow/
 │   ├── dags/
-│   │   ├── production_pipeline.py   # main pipeline
-│   │   ├── dbt_cosmos_demo.py       # Cosmos demo: the dbt project as a whole
-│   │   └── examples/                # learning DAGs (branching, retries, XCom, etc.)
+│   │   ├── eia/                     # EIA pipelines (the main project)
+│   │   └── jaffle_shop/             # learning DAGs (Cosmos, branching, retries, ...)
+│   ├── docker-compose.override.yml  # mounts ../dbt into the containers, passes env vars
 │   ├── requirements.txt
-│   └── docker-compose.override.yml  # volume mapping of the dbt project into the container
-└── docker-compose.yml         # Postgres for dbt
+│   └── .env                         # NOT in git: EIA key, DWH connection
+├── dbt/
+│   ├── eia/                         # dbt project for the EIA data
+│   │   ├── models/{staging,marts}/
+│   │   ├── macros/generate_schema_name.sql
+│   │   └── profiles.yml             # NOT in git
+│   └── jaffle_shop/                 # original learning dbt project
+├── metabase/
+│   ├── docker-compose.yml
+│   └── metabase-data/               # Metabase application DB (H2 file)
+├── scripts/backup_postgres.sh       # pg_dump of the DWH, keeps the last 3 dumps
+├── docker-compose.yml               # Postgres DWH (dbt-postgres-eia)
+├── Makefile
+└── .env                             # NOT in git, see `.env example`
 ```
 
-## Getting started from scratch
+## Configuration
 
-1. Postgres for dbt:
+Copy `.env example` to `.env` in the project root and fill it in:
+
+| Variable | Used for |
+|---|---|
+| `DWH_POSTGRES_USER` / `_PASSWORD` / `_DB` | credentials of the DWH Postgres container |
+| `ASTRO_NETWORK_NAME` | name of the Docker network created by Astro, shared by the DWH and Metabase |
+| `ANTHROPIC_API_KEY` | Metabot (passed to Metabase as `MB_LLM_ANTHROPIC_API_KEY`) |
+| `DBT_ALLOW_EXPERIMENTAL_ADAPTERS`, `DBT_CODE` | dbt settings |
+
+`airflow/.env` additionally needs `AIRFLOW_VAR_EIA_API_KEY`, `AIRFLOW_VAR_DWH_POSTGRES_PASSWORD` and `AIRFLOW_CONN_DBT_POSTGRES_EIA`.
+
+`dbt/eia/profiles.yml` is not in git. Create it with profile name `eia`, target `dev`, pointing at the DWH (`host: dbt-postgres-eia`, port `5432` from inside the Docker network, or `localhost:5433` from the host). The password is read from `DBT_POSTGRES_PASSWORD`.
+
+## Getting started
 
 ```bash
-docker compose up -d
+make up       # starts Airflow (astro dev start), the DWH Postgres and Metabase
+make status   # running containers and existing backups
+make down     # backs up the DWH first, then stops everything
+make backup   # on-demand pg_dump into backups/postgres/ (last 3 kept)
 ```
 
-2. dbt environment:
+`make up` detects the Astro Docker network and attaches the DWH and Metabase to it, so the three stacks can reach each other by container name.
+
+* Airflow UI: http://localhost:8080
+* Metabase: http://localhost:3000
+
+### Running dbt from the host
 
 ```bash
-python3 -m venv ~/.venvs/data-platform
-source ~/.venvs/data-platform/bin/activate
-pip install dbt-postgres
-```
-
-3. `~/.dbt/profiles.yml` (for running dbt from the host):
-
-```yaml
-jaffle_shop:
-  target: dev
-  outputs:
-    dev:
-      type: postgres
-      host: localhost
-      port: 5432
-      user: dbtuser
-      password: dbtpass
-      dbname: dbtdb
-      schema: schema
-      threads: 4
-```
-
-4. `dbt/jaffle_shop/profiles.yml` (for running from the Airflow container — the same config, but `host: host.docker.internal`)
-
-5. Populate and verify the dbt project:
-
-```bash
-cd dbt/jaffle_shop
+cd dbt/eia
 dbt build
 ```
 
-6. Airflow:
+### Metabot (AI assistant)
 
-```bash
-cd airflow
-astro dev start
-```
-
-UI: http://localhost:8080
-
-7. Airflow connection `dbt_postgres` (Admin → Connections): host `host.docker.internal`, port `5432`, login/password/schema as above — used by Cosmos to dynamically generate the dbt profile.
+Set `ANTHROPIC_API_KEY` in the root `.env`; `make up` passes it to Metabase with `docker compose --env-file ../.env`. Check **Admin → AI** in Metabase: it should show "Connected to Anthropic". Metabot works best on saved models and metrics built on top of the marts, so connect the DWH in Metabase (**Admin → Databases**) and save models from `marts.*`.
 
 ## What's implemented
 
-* A full layered dbt project: staging → intermediate → marts, with data quality tests (`unique`, `not_null`, `accepted_values`)
-* Incremental materialization (`fct_orders`)
-* Snapshot (SCD Type 2) for order change history
-* A custom macro (`cents_to_dollars`) and an external package (`dbt_utils`)
-* Two ways to integrate with Airflow: `BashOperator` (simple) and `astronomer-cosmos` (granular, one task per model)
-* A production-like DAG with conditional success/failure notifications via `trigger_rule`
-* Retry logic and an `on_failure_callback` at the task level
+* Incremental API extraction (only data newer than `MAX(period)` in raw) with task retries
+* Layered dbt project: raw sources → staging (deduplication, typing) → marts
+* Incremental mart materialization
+* dbt run orchestrated as native Airflow tasks through Cosmos
+* Automated Postgres backups on `make down`
+* Metabase on top of the warehouse with Metabot enabled via Anthropic
+* Jaffle Shop sandbox: seeds, snapshots (SCD2), custom macro, `dbt_utils`, Cosmos vs `BashOperator` comparison, `trigger_rule` notifications
 
 ## Author
 
-Learning project, completed following a 14-day dbt + Airflow study plan.
+Learning project, built while following a dbt + Airflow study plan.
